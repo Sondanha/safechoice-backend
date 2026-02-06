@@ -1,14 +1,19 @@
 from fastapi import APIRouter
 from uuid import uuid4
-from app.domain.scenario import DUMMY_SCENARIO
+from typing import Optional
+
+from app.domain.scenario import load_scenario
 from app.service.scenario_engine import ScenarioEngine
 
 router = APIRouter()
-engine = ScenarioEngine(DUMMY_SCENARIO)
 
 @router.post("/")
-def create_session():
+def create_session(scenario_id: Optional[str] = None):
     session_id = str(uuid4())
+
+    scenario = load_scenario(scenario_id)
+    engine = ScenarioEngine(scenario)
+
     step = engine.get_initial_step()
 
     return {

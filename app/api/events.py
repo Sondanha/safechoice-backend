@@ -1,10 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from app.domain.event import Event
-from app.domain.scenario import DUMMY_SCENARIO
 from app.service.scenario_engine import ScenarioEngine
 
 router = APIRouter()
-engine = ScenarioEngine(DUMMY_SCENARIO)
 
 @router.post("/")
 def collect_event(event: Event):
