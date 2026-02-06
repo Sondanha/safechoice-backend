@@ -1,214 +1,188 @@
 # SAFECHOICE Backend
 
-피싱·스캠 대응 **행동 선택 기반 교육 시뮬레이션 서비스** SAFECHOICE의 백엔드 레포지토리이다.
+SAFECHOICE는 피싱·스캠을 **탐지·차단의 대상**이 아니라
+**사용자의 실제 판단과 행동을 관찰·분석·교정하는 교육 시뮬레이션**으로 다루는 서비스다.
 
-본 프로젝트는 탐지 중심의 기존 피싱 대응 방식에서 벗어나,  
-**사용자의 실제 판단·행동 과정을 시뮬레이션하고 분석하여 취약성을 교정하는 예방 교육 서비스**를 목표로 한다.
-
----
-
-## 1. 프로젝트 목표
-
-SAFECHOICE는 피싱·스캠을 단순한 “차단 대상 위협”이 아니라  
-**사용자의 반응을 관찰하고 학습시키는 경험 과정**으로 재정의한다.
-
-- 실제 범죄 스크립트를 기반으로 한 시뮬레이션 제공
-- 사용자 선택·반응 속도·검증 시도 등의 행동 로그 수집
-- 룰 기반 분석을 통해 개인별 취약성 도출
-- 분석 결과를 설명 중심의 피드백으로 제공
-
-MVP 단계에서는 다음 범위까지만 구현한다.
-
-- 시뮬레이션 세션 관리
-- 사용자 이벤트 로그 수집
-- 행동 지표(feature) 집계
-- 취약성 점수 및 리포트 생성
-
-LLM 및 RAG는 **판단 로직이 아닌 설명 보조 역할**로만 사용하며,  
-현재는 뼈대 코드만 두고 실제 연동은 후순위로 둔다.
+본 레포지토리는 SAFECHOICE 서비스의 **시뮬레이션 엔진, 행동 수집, 분석 및 관리자 관점 확장**을 담당하는 백엔드이다.
 
 ---
 
-## 2. 기술 및 설계 원칙
+## 1. 서비스 관점에서의 백엔드 역할
 
-- Framework: **FastAPI (Python)**
-- Architecture: **DDD-lite**
-  - Domain 중심 설계
-  - 룰 기반 로직 우선
-  - LLM은 설명 전용
-- MVP 기준:
-  - 단순성
-  - 설명 가능성
-  - 확장 가능성
+SAFECHOICE 백엔드는 단순 API 서버가 아니라
+**시뮬레이션을 실행하고, 사용자의 행동을 구조화된 데이터로 변환하는 엔진형 백엔드**를 지향한다.
 
-### DDD 적용 범위
+백엔드의 핵심 책임은 다음과 같다.
 
-- 사용함:
-  - Entity
-  - Domain Service
-  - Infra 분리
-- 사용하지 않음:
-  - Bounded Context 분리
-  - CQRS / Event Sourcing
-  - Repository 추상화 남발
+- 고정된 시나리오 기반 피싱 시뮬레이션 실행
+- 사용자 선택·응답 흐름을 이벤트로 수집
+- 행동 로그를 해석 가능한 지표(feature)로 변환
+- 개인 단위 리포트 생성
+- 관리자 관점에서 시나리오·분석 구조를 확장 가능하게 유지
+
+---
+
+## 2. 설계 철학
+
+### 판단은 룰 기반, 설명만 AI
+
+- 사용자의 위험 판단 여부는 **명시적 규칙**으로 계산
+- LLM은 판단 로직이 아닌 **사후 설명(피드백) 보조** 용도로만 사용
+- MVP 단계에서는 LLM 연동 없이 구조만 확보
+
+### 관리자 중심 확장 가능성
+
+- 사용자 서비스 외에 **관리자 관점의 시나리오 관리·분석 자동화**를 전제로 설계
+- 실제 DB, 인증, 자동화는 구현하지 않되 **API 구조와 책임은 명확히 분리**
 
 ---
 
 ## 3. 핵심 도메인 개념
 
-SAFECHOICE 백엔드는 다음 6개 개념으로 구성된다.
+SAFECHOICE 백엔드는 다음 도메인 개념을 중심으로 구성된다.
 
-- **Session**  
+- **Scenario**
+  실제 피싱·스캠 사례를 기반으로 한 시뮬레이션 흐름 정의
+  (다중 시나리오 구조 지원)
+
+- **Step**
+  시나리오 내 개별 단계 (메시지, 선택지)
+
+- **Session**
   하나의 시뮬레이션 실행 단위
-- **Scenario**  
-  실제 범죄 사례 기반 시뮬레이션 흐름
-- **Step**  
-  시나리오 내 단계
-- **Event**  
-  사용자 행동 로그 (클릭, 입력, 대기 등)
-- **Feature**  
-  이벤트를 집계한 행동·심리 지표
-- **Report**  
-  취약성 점수 및 설명 결과
+  (선택된 scenario_id와 현재 진행 상태를 보유)
+
+- **Event**
+  사용자 행동 로그
+  (선택, 반응 단계, 트리거, 검증 시도 등)
+
+- **Feature**
+  이벤트를 집계해 만든 행동·심리 지표
+
+- **Report**
+  Feature를 기반으로 산출된 점수 및 해설 결과
 
 ---
 
-## 4. 현재 디렉토리 구조
+## 4. 시나리오 구조 (Multi-Scenario)
+
+SAFECHOICE는 단일 시나리오가 아닌 **다중 시나리오 구조**를 기본으로 한다.
+
+- 시나리오는 `scenario_id`로 식별
+- 세션 생성 시 시나리오 선택 가능
+- 동일한 엔진(`ScenarioEngine`)을 재사용
+
+예시 개념:
+
+- `bank_urgency` (은행 사칭 · 긴급성)
+- `authority_impersonation`
+- `reward_phishing` 등
+
+이는 관리자 화면에서의 **시나리오 관리 및 자동화**를 전제로 한 구조이다.
+
+---
+
+## 5. API 구성 (MVP 기준)
+
+### 사용자 플로우 API
+
+- `POST /sessions`
+  - 시나리오 선택(optional) 후 세션 생성
+  - 첫 step 반환
+
+- `POST /events`
+  - 사용자 행동 이벤트 수집
+  - 다음 step 또는 종료 여부 반환
+
+- `GET /reports/{session_id}`
+  - 시뮬레이션 종료 후 개인 리포트 조회
+
+### 관리자 관점 API (구조 제공용)
+
+- `GET /admin/scenarios`
+  - 등록된 시나리오 목록 조회
+  - 관리자 시나리오 관리 UI 연동용
+
+> 관리자 API는 실제 운영 기능이 아니라
+> **관리자 화면 및 확장 가능성을 설명하기 위한 구조 제공**이 목적이다.
+
+---
+
+## 6. 이벤트 수집 모델
+
+`POST /events`는 다음과 같은 사용자 행동 정보를 수집한다.
+
+- 현재 step
+- 선택한 옵션
+- 단계 깊이
+- 심리 트리거(긴급성, 권위 등)
+- 검증 시도 여부
+
+이 이벤트들은 이후 **행동 패턴 분석 및 교육 피드백**의 근거가 된다.
+
+---
+
+## 7. 분석 및 리포트 생성
+
+### 분석 방식
+
+- 룰 기반 점수 산식
+- 반응 속도, 전환 단계, 트리거 반응, 검증 시도 여부 반영
+
+### 리포트 특징
+
+- “정답/오답”이 아닌 **행동 경향 설명**
+- 사용자가 왜 위험했는지를 서술형으로 전달
+- 향후 LLM 기반 해설로 교체 가능하도록 구조 설계
+
+---
+
+## 8. 디렉토리 구조
 
 ```text
 safechoice-backend/
  └─ app/
-    ├─ main.py
+    ├─ main.py              # FastAPI 엔트리포인트
     ├─ api/
-    │  ├─ sessions.py     # 세션 생성/진행 API (첫 step 반환)
-    │  ├─ events.py       # 사용자 이벤트 수집 + 다음 step 반환
-    │  └─ reports.py      # 분석 결과 조회 API
+    │  ├─ sessions.py       # 세션 생성
+    │  ├─ events.py         # 이벤트 수집
+    │  ├─ reports.py        # 리포트 조회
+    │  └─ admin.py          # 관리자용 API (시나리오 등)
     ├─ domain/
-    │  ├─ scenario.py     # (MVP) DUMMY_SCENARIO 포함
-    │  ├─ session.py      # Session 도메인
-    │  ├─ event.py        # Event, EventType 정의
-    │  ├─ feature.py      # 행동 지표(Feature)
-    │  └─ report.py       # 리포트 도메인
+    │  ├─ scenario.py       # 시나리오 정의 및 선택
+    │  ├─ session.py        # Session 모델
+    │  ├─ event.py
+    │  ├─ feature.py
+    │  └─ report.py
     ├─ service/
-    │  ├─ scenario_engine.py  # 룰 기반 step 전환
-    │  ├─ analysis_engine.py  # 이벤트→Feature 집계 + 점수 산식
-    │  └─ feedback_engine.py  # 룰 기반 요약/피드백 템플릿
-    ├─ infra/
-    │  └─ collector/
-    │     └─ skeleton.py  # 외부 시나리오/문서 자동 수집 뼈대(비활성)
+    │  ├─ scenario_engine.py
+    │  ├─ analysis_engine.py
+    │  └─ feedback_engine.py
     └─ core/
-       └─ config.py       # env 로딩(현재는 최소)
+       └─ config.py
 ```
-
----
-
-## 5. API 범위 (MVP)
-
-- `GET /health`
-  서버 상태 확인
-- `POST /sessions`
-  세션 생성 + 첫 step 반환
-- `POST /events`
-  이벤트 수집 + 다음 step 반환 (종료 시 ended=true)
-- `GET /reports/{session_id}`
-  분석 결과 조회
-
----
-
-## 6. 이벤트 payload 계약 (FE ↔ BE)
-
-`POST /events` 요청의 `payload`는 다음 키를 포함한다.
-
-- `current_step_id` (string): 현재 step id
-- `option_id` (string): 사용자가 선택한 옵션 id
-- `step_index` (number): 단계 깊이(전환 단계 지표)
-- `trigger` (string, optional): 심리 트리거 (urgency/authority/curiosity/loss_avoidance 등)
-- `verification` (boolean, optional): 검증 시도 여부
-
-예시:
-
-```json
-{
-  "session_id": "uuid",
-  "type": "click",
-  "payload": {
-    "current_step_id": "step_1",
-    "option_id": "reply",
-    "step_index": 1,
-    "trigger": "urgency",
-    "verification": false
-  },
-  "timestamp": "2026-02-05T12:00:00"
-}
-```
-
----
-
-## 7. 분석 모델 (MVP 1차)
-
-본 MVP는 다음 평가 축을 기반으로 **룰 기반 분석**을 수행한다.
-
-- 행동 반응: 반응 속도, 전환 단계
-- 심리 반응: 트리거(긴급성/권위/호기심/손실회피) 반응
-- 행동 신중성: 발신자/링크 검증 시도 여부
-
-LLM은 판단에 관여하지 않으며, 현재는 룰 기반 템플릿으로 피드백을 생성한다.
-
----
-
-## 8. 자동 수집 관련 설계
-
-외부 범죄 사례/문서 자동 수집은 운영 서비스에서는 사용하지 않으며,
-확장 가능성 증명을 위해 뼈대 코드만 유지한다.
 
 ---
 
 ## 9. 실행 방법
 
-### 가상환경
-
 ```bash
 python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS/Linux
 source .venv/bin/activate
-```
-
-### 의존성 설치
-
-```bash
 pip install -r requirements.txt
-```
-
-### 실행
-
-```bash
 uvicorn app.main:app --reload
 ```
 
-- Swagger: `http://127.0.0.1:8000/docs`
+- Swagger UI: `http://127.0.0.1:8000/docs`
 
 ---
 
-## 10. 진행 상태
+## 10. 백엔드의 현재 위치 요약
 
-- [x] FastAPI 프로젝트 기동
-- [x] 시나리오(step) 기반 룰 엔진(ScenarioEngine)
-- [x] 세션 생성 → 첫 step 반환
-- [x] 이벤트 수집 → 다음 step 반환
-- [x] 이벤트 → Feature 집계(AnalysisEngine)
-- [x] 점수 산식 + 룰 기반 피드백(FeedbackEngine)
-- [x] Swagger 기반 API 테스트 완료
-- [ ] DB 실제 연결 및 영속화 (후순위)
-- [ ] LLM/RAG 연동 (후순위)
-- [ ] 자동 수집 파이프라인 구현 (후순위)
+- 사용자 시뮬레이션 플로우: **완성**
+- 관리자/확장 관점 구조: **확보**
+- DB, 인증, LLM 연동: **의도적으로 미구현**
 
----
+SAFECHOICE 백엔드는 **“완성된 서비스”가 아니라 “설명 가능한 MVP 엔진”**을 목표로 한다.
 
-## 11. 개발 원칙 요약
-
-- 비즈니스 로직은 Router에 두지 않는다
-- 판단은 룰 기반, 설명만 LLM
-- MVP에서는 “되는 것”이 아니라 “설명 가능한 것”을 만든다
-- 확장은 구조로만 열어두고, 구현은 미룬다
+지금 단계에서 더 많은 기능 구현보다 **구조적 설득력과 역할 분리**를 우선한다.
